@@ -352,18 +352,58 @@ def setup_cfg_to_setup_kwargs(config):
                     data_files = data_files.items()
                 in_cfg_value = data_files
             elif arg == 'cmdclass':
+                conflicts = []
                 cmdclass = {}
                 dist = Distribution()
                 for cls in in_cfg_value:
                     cls = resolve_name(cls)
                     cmd = cls(dist)
+                    cmd_name = cmd.get_command_name()
+                    if cmd_name in cmdclass:
+                        # we have a conflict
+                        conflicts.append(cmd_name)
+                        pbrclass = issubclass_pbr_command_class(cls)
+                        if cmd.__class__ == pbrclass:
+                            continue
                     cmdclass[cmd.get_command_name()] = cls
                 in_cfg_value = cmdclass
+
+                for command in conflicts:
+                    if not issubclass_pbr_command_class(cmdclass[command]):
+                        log.warn("Using non-pbr command "
+                                 "class %s for '%s' !",
+                                 cmdclass[command], cmd_name)
 
         kwargs[arg] = in_cfg_value
 
     return kwargs
 
+
+def issubclass_pbr_command_class(subclass):
+    """Determine whether the class instance is a pbr command class."""
+
+    from distutils.cmd import Command
+    import inspect
+
+    from pbr import packaging
+    pbrclasses = [
+        'LocalEggInfo',
+        'LocalSDist',
+        'LocalInstallScripts',
+        'LocalBuildDoc',
+        'LocalBuildLatex',
+        'TestrTest',
+        'NoseTest',
+        'LocalInstall',
+    ]
+
+    for klassname in pbrclasses:
+        try:
+            klass = getattr(packaging, klassname)
+            if issubclass(subclass, klass):
+                return klass
+        except (AttributeError, TypeError):
+            continue
 
 def register_custom_compilers(config):
     """Handle custom compilers; this has no real equivalent in distutils, where
