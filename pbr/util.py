@@ -78,6 +78,7 @@ except ImportError:
     import configparser
 
 from pbr import extra_files
+from pbr import packaging
 import pbr.hooks
 
 # A simplified RE for this; just checks that the line ends with version
@@ -364,6 +365,14 @@ def setup_cfg_to_setup_kwargs(config):
                         conflicts.append(cmd_name)
                         pbrclass = issubclass_pbr_command_class(cls)
                         if cmd.__class__ == pbrclass:
+                            # Don't clobber a command class specified
+                            # by [globals] in setup.cfg, however, allow
+                            # custom command classes to override a pbr
+                            # command class.
+                            # If this condition is true, the current
+                            # command class `cmd` is coming from
+                            # pbr.hooks.commands, so don't allow it
+                            # to override.
                             continue
                     cmdclass[cmd.get_command_name()] = cls
                 in_cfg_value = cmdclass
@@ -371,7 +380,7 @@ def setup_cfg_to_setup_kwargs(config):
                 for command in conflicts:
                     if not issubclass_pbr_command_class(cmdclass[command]):
                         log.warn("Using non-pbr command "
-                                 "class %s for '%s' !",
+                                 "class %s for '%s' command!",
                                  cmdclass[command], cmd_name)
 
         kwargs[arg] = in_cfg_value
@@ -380,13 +389,13 @@ def setup_cfg_to_setup_kwargs(config):
 
 
 def issubclass_pbr_command_class(subclass):
-    """Determine whether the class instance is a pbr command class."""
+    """Determine whether a class is a subclass of a pbr command class.
 
-    from distutils.cmd import Command
-    import inspect
+    Note: The python builtin issubclass() considers a class to be a subclass
+    of itself, i.e. will return True for issubclass(A, A)
+    """
 
-    from pbr import packaging
-    pbrclasses = [
+    pbrcmdclasses = [
         'LocalEggInfo',
         'LocalSDist',
         'LocalInstallScripts',
@@ -397,7 +406,7 @@ def issubclass_pbr_command_class(subclass):
         'LocalInstall',
     ]
 
-    for klassname in pbrclasses:
+    for klassname in pbrcmdclasses:
         try:
             klass = getattr(packaging, klassname)
             if issubclass(subclass, klass):
