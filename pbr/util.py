@@ -78,6 +78,7 @@ except ImportError:
     import configparser
 
 from pbr import extra_files
+from pbr import packaging
 import pbr.hooks
 
 # A simplified RE for this; just checks that the line ends with version
@@ -352,17 +353,66 @@ def setup_cfg_to_setup_kwargs(config):
                     data_files = data_files.items()
                 in_cfg_value = data_files
             elif arg == 'cmdclass':
+                conflicts = []
                 cmdclass = {}
                 dist = Distribution()
                 for cls in in_cfg_value:
                     cls = resolve_name(cls)
                     cmd = cls(dist)
+                    cmd_name = cmd.get_command_name()
+                    if cmd_name in cmdclass:
+                        # we have a conflict
+                        conflicts.append(cmd_name)
+                        pbrclass = issubclass_pbr_command_class(cls)
+                        if cmd.__class__ == pbrclass:
+                            # Don't clobber a command class specified
+                            # by [globals] in setup.cfg, however, allow
+                            # custom command classes to override a pbr
+                            # command class.
+                            # If this condition is true, the current
+                            # command class `cmd` is coming from
+                            # pbr.hooks.commands, so don't allow it
+                            # to override.
+                            continue
                     cmdclass[cmd.get_command_name()] = cls
                 in_cfg_value = cmdclass
+
+                for command in conflicts:
+                    if not issubclass_pbr_command_class(cmdclass[command]):
+                        log.warn("Using non-pbr command "
+                                 "class %s for '%s' command!",
+                                 cmdclass[command], cmd_name)
 
         kwargs[arg] = in_cfg_value
 
     return kwargs
+
+
+def issubclass_pbr_command_class(subclass):
+    """Determine whether a class is a subclass of a pbr command class.
+
+    Note: The python builtin issubclass() considers a class to be a subclass
+    of itself, i.e. will return True for issubclass(A, A)
+    """
+
+    pbrcmdclasses = [
+        'LocalEggInfo',
+        'LocalSDist',
+        'LocalInstallScripts',
+        'LocalBuildDoc',
+        'LocalBuildLatex',
+        'TestrTest',
+        'NoseTest',
+        'LocalInstall',
+    ]
+
+    for klassname in pbrcmdclasses:
+        try:
+            klass = getattr(packaging, klassname)
+            if issubclass(subclass, klass):
+                return klass
+        except (AttributeError, TypeError):
+            continue
 
 
 def register_custom_compilers(config):
